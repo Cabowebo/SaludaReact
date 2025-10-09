@@ -55,7 +55,7 @@ export default function AgendaDeEspecialistas() {
   // Estados para paginación simplificados
   const [paginaActual, setPaginaActual] = useState(1);
   const [totalPaginas, setTotalPaginas] = useState(1);
-  const [elementosPorPagina] = useState(10);
+  const [elementosPorPagina, setElementosPorPagina] = useState(10);
   
   // Estados para filtros
   const [filtros, setFiltros] = useState({
@@ -127,6 +127,9 @@ export default function AgendaDeEspecialistas() {
         
         if (response.success) {
           const citasData = response.data || [];
+          
+          console.log('Datos de citas recibidos:', citasData);
+          console.log('Primera cita (si existe):', citasData[0]);
           
           if (Array.isArray(citasData)) {
             setCitas(citasData);
@@ -329,7 +332,7 @@ export default function AgendaDeEspecialistas() {
 
   const handleModalSuccess = () => {
     setModalOpen(false);
-    cargarDatos(paginacion.current_page); // Recargar la lista manteniendo la página actual
+    cargarDatos(paginaActual); // Recargar la lista manteniendo la página actual
   };
 
   // Manejar selección de especialista y sucursal para abrir modal de horarios

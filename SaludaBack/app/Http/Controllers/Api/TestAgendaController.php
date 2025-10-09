@@ -35,70 +35,104 @@ class TestAgendaController extends Controller
     public function getCitas(Request $request)
     {
         try {
-            $query = DB::table('citas_mejoradas')
-                ->join('pacientes_mejorados', 'citas_mejoradas.Fk_Paciente', '=', 'pacientes_mejorados.Paciente_ID')
-                ->join('especialistas', 'citas_mejoradas.Fk_Especialista', '=', 'especialistas.Especialista_ID')
-                ->select(
-                    'citas_mejoradas.*',
-                    'pacientes_mejorados.Nombre as Nombre_Paciente',
-                    'pacientes_mejorados.Apellido as Apellido_Paciente',
-                    'pacientes_mejorados.Telefono as Telefono_Paciente',
-                    'especialistas.Nombre_Completo as Nombre_Especialista'
-                );
+            // Usar el modelo CitaMejorada con relaciones
+            $query = CitaMejorada::with(['paciente', 'especialista', 'sucursal']);
 
             // Filtro por fecha
             if ($request->filled('fecha')) {
                 $fechaFiltro = date('Y-m-d', strtotime($request->fecha));
-                $query->whereDate('citas_mejoradas.Fecha_Cita', '=', $fechaFiltro);
+                $query->whereDate('Fecha_Cita', '=', $fechaFiltro);
             }
 
             // Filtro por especialista
             if ($request->filled('especialista')) {
-                $query->where('citas_mejoradas.Fk_Especialista', $request->especialista);
+                $query->where('Fk_Especialista', $request->especialista);
             }
 
             // Filtro por sucursal
             if ($request->filled('sucursal')) {
-                $query->where('citas_mejoradas.Fk_Sucursal', $request->sucursal);
+                $query->where('Fk_Sucursal', $request->sucursal);
             }
 
             // Filtro por estado
             if ($request->filled('estado')) {
-                $query->where('citas_mejoradas.Estado_Cita', $request->estado);
+                $query->where('Estado_Cita', $request->estado);
             }
 
             // Filtro por especialidad
             if ($request->filled('especialidad')) {
-                $query->where('especialistas.Fk_Especialidad', $request->especialidad);
+                $query->whereHas('especialista', function($q) use ($request) {
+                    $q->where('Fk_Especialidad', $request->especialidad);
+                });
             }
 
             // Filtro por nombre del paciente (BÚSQUEDA)
             if ($request->filled('busqueda')) {
-                $query->where(function($q) use ($request) {
-                    $q->where('pacientes_mejorados.Nombre', 'LIKE', '%' . $request->busqueda . '%')
-                      ->orWhere('pacientes_mejorados.Apellido', 'LIKE', '%' . $request->busqueda . '%')
-                      ->orWhereRaw("CONCAT(pacientes_mejorados.Nombre, ' ', pacientes_mejorados.Apellido) LIKE ?", ['%' . $request->busqueda . '%']);
+                $query->whereHas('paciente', function($q) use ($request) {
+                    $q->where('Nombre', 'LIKE', '%' . $request->busqueda . '%')
+                      ->orWhere('Apellido', 'LIKE', '%' . $request->busqueda . '%')
+                      ->orWhereRaw("CONCAT(Nombre, ' ', Apellido) LIKE ?", ['%' . $request->busqueda . '%']);
                 });
             }
 
             // Ordenar por fecha y hora de la cita
-            $query->orderBy('citas_mejoradas.Fecha_Cita', 'DESC')
-                  ->orderBy('citas_mejoradas.Hora_Inicio', 'ASC');
+            $query->orderBy('Fecha_Cita', 'DESC')
+                  ->orderBy('Hora_Inicio', 'ASC');
 
             // Paginación
             $perPage = $request->get('per_page', 15);
             $page = $request->get('page', 1);
             $citas = $query->paginate($perPage, ['*'], 'page', $page);
 
+            // Transformar los datos para que coincidan con la estructura esperada por el frontend
+            $citasTransformadas = $citas->getCollection()->map(function($cita) {
+                return [
+                    'Cita_ID' => $cita->Cita_ID,
+                    'Fecha_Cita' => $cita->Fecha_Cita,
+                    'Hora_Inicio' => $cita->Hora_Inicio,
+                    'Hora_Fin' => $cita->Hora_Fin,
+                    'Estado_Cita' => $cita->Estado_Cita,
+                    'Tipo_Cita' => $cita->Tipo_Cita,
+                    'Observaciones' => $cita->Observaciones,
+                    'Fk_Paciente' => $cita->Fk_Paciente,
+                    'Fk_Especialista' => $cita->Fk_Especialista,
+                    'Fk_Sucursal' => $cita->Fk_Sucursal,
+                    'Fk_Horario' => $cita->Fk_Horario,
+                    'paciente' => $cita->paciente ? [
+                        'Paciente_ID' => $cita->paciente->Paciente_ID,
+                        'Nombre' => $cita->paciente->Nombre,
+                        'Apellido' => $cita->paciente->Apellido,
+                        'Telefono' => $cita->paciente->Telefono,
+                        'Email' => $cita->paciente->Email,
+                        'Fecha_Nacimiento' => $cita->paciente->Fecha_Nacimiento,
+                        'Genero' => $cita->paciente->Genero
+                    ] : null,
+                    'especialista' => $cita->especialista ? [
+                        'Especialista_ID' => $cita->especialista->Especialista_ID,
+                        'Nombre_Completo' => $cita->especialista->Nombre_Completo,
+                        'Especialidad' => $cita->especialista->Especialidad,
+                        'Telefono' => $cita->especialista->Telefono,
+                        'Email' => $cita->especialista->Email
+                    ] : null,
+                    'sucursal' => $cita->sucursal ? [
+                        'Sucursal_ID' => $cita->sucursal->Sucursal_ID,
+                        'Nombre_Sucursal' => $cita->sucursal->Nombre_Sucursal,
+                        'Direccion' => $cita->sucursal->Direccion,
+                        'Telefono' => $cita->sucursal->Telefono
+                    ] : null
+                ];
+            });
+
             return response()->json([
-                'status' => 'success',
-                'data' => $citas->items(),
-                'count' => $citas->count(),
+                'success' => true,
+                'data' => $citasTransformadas,
                 'total' => $citas->total(),
                 'current_page' => $citas->currentPage(),
                 'last_page' => $citas->lastPage(),
                 'per_page' => $citas->perPage(),
-                'timestamp' => now()->toISOString()
+                'from' => $citas->firstItem(),
+                'to' => $citas->lastItem(),
+                'message' => 'Citas obtenidas exitosamente'
             ]);
         } catch (\Exception $e) {
             \Log::error('Error al obtener citas', [
@@ -107,9 +141,9 @@ class TestAgendaController extends Controller
             ]);
 
             return response()->json([
-                'status' => 'error',
+                'success' => false,
                 'message' => 'Error al obtener citas: ' . $e->getMessage(),
-                'timestamp' => now()->toISOString()
+                'data' => []
             ], 500);
         }
     }
